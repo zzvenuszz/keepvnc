@@ -1,0 +1,11 @@
+{
+  "name": "keep-vnc",
+  "version": "1.0.0",
+  "description": "Giữ kết nối VNC qua ngrok để tránh timeout",
+  "main": "keepVNC.js",
+  "scripts": {
+    "start": "node keepVNC.js"
+  },
+  "author": "Hoan",
+  "license": "MIT"
+}
