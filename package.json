@@ -7,10 +7,10 @@
     "start": "node keepVNC.js"
   },
   "engines": {
-    "node": ">=14 <=18"
+    "node": "18.x"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "rfb2": "1.1.0"
+    "rfb2": "github:sidorares/rfb2"
   }
 }
