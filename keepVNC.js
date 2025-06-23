@@ -2,21 +2,24 @@ const net = require('net');
 const express = require('express');
 const app = express();
 
+// Cấu hình địa chỉ VNC và thời gian ping
 const HOST = '0.tcp.jp.ngrok.io';
 const PORT = 11151;
-const INTERVAL = 30000;
+const INTERVAL = 30000; // 30 giây
 
+// Biến lưu trạng thái
 let lastPing = 'Chưa ping';
 let visitCount = 0;
 let lastVisitTime = 'Chưa có truy cập';
 
+// Hàm giữ kết nối VNC sống
 function keepAlive() {
   const socket = new net.Socket();
-  socket.setTimeout(10000);
+  socket.setTimeout(10000); // 10 giây timeout
 
   socket.connect(PORT, HOST, () => {
-    console.log(`[${new Date().toISOString()}] ✅ Ping VNC thành công: ${HOST}:${PORT}`);
     lastPing = new Date().toISOString();
+    console.log(`[${lastPing}] ✅ Ping VNC thành công: ${HOST}:${PORT}`);
     socket.destroy();
   });
 
@@ -30,10 +33,14 @@ function keepAlive() {
   });
 }
 
-// Web server để UptimeRobot ping
+// Giao diện web chính
 app.get('/', (req, res) => {
   visitCount++;
   lastVisitTime = new Date().toISOString();
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+
+  // Ghi log ra console
+  console.log(`📥 Truy cập #${visitCount} lúc ${lastVisitTime} từ IP: ${ip}`);
 
   res.send(`
     <h1>✅ VNC is alive!</h1>
@@ -43,6 +50,7 @@ app.get('/', (req, res) => {
   `);
 });
 
+// API cho UptimeRobot ping
 app.get('/ping', (req, res) => {
   const time = new Date().toISOString();
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
@@ -50,11 +58,12 @@ app.get('/ping', (req, res) => {
   res.send(`OK: ${lastPing}`);
 });
 
+// Khởi chạy web server
 const WEB_PORT = process.env.PORT || 3000;
 app.listen(WEB_PORT, () => {
   console.log(`🌐 Web UI running at http://localhost:${WEB_PORT}`);
 });
 
-// Chạy ping
+// Bắt đầu quá trình ping định kỳ
 keepAlive();
 setInterval(keepAlive, INTERVAL);
