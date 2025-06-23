@@ -2,8 +2,8 @@ const net = require('net');
 const express = require('express');
 const app = express();
 
-const HOST = '0.tcp.jp.ngrok.io';  // NAT đến VNC Ubuntu
-const PORT = 11151;                // Cổng NAT
+const HOST = '0.tcp.jp.ngrok.io';
+const PORT = 11151;
 const INTERVAL = 30000;
 
 let lastPing = 'Chưa ping';
@@ -32,7 +32,11 @@ function keepAlive() {
 app.get('/', (req, res) => {
   res.send(`<h1>✅ VNC is alive!</h1><p>Last ping: ${lastPing}</p>`);
 });
+
 app.get('/ping', (req, res) => {
+  const time = new Date().toISOString();
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  console.log(`📶 [${time}] Ping nhận từ ${ip}`);
   res.send(`OK: ${lastPing}`);
 });
 
