@@ -1,11 +1,12 @@
 {
-  "name": "keep-vnc",
+  "name": "keep-vnc-web",
   "version": "1.0.0",
-  "description": "Giữ kết nối VNC qua ngrok để tránh timeout",
+  "description": "Giữ kết nối VNC và cho phép UptimeRobot ping",
   "main": "keepVNC.js",
   "scripts": {
     "start": "node keepVNC.js"
   },
-  "author": "Hoan",
-  "license": "MIT"
+  "dependencies": {
+    "express": "^4.18.2"
+  }
 }
