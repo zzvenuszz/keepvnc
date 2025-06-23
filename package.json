@@ -1,17 +1,17 @@
 {
-  "name": "vnc-keepalive-web",
+  "name": "vnc-keepalive",
   "version": "1.0.0",
-  "description": "Ứng dụng giữ kết nối VNC và cung cấp giao diện web giám sát",
-  "main": "index.js",
+  "description": "Fake VNC client + Web interface to keep VNC session alive",
+  "main": "keepVNC.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node keepVNC.js"
   },
-  "author": "Hoàn",
-  "license": "MIT",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
-    "basic-auth": "^2.0.1",
     "express": "^4.18.2",
-    "net": "latest",
-    "rfb2": "^1.2.0"
+    "rfb2": "^0.2.2",
+    "express-basic-auth": "^1.2.0"
   }
 }
