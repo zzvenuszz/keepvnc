@@ -7,6 +7,8 @@ const PORT = 11151;
 const INTERVAL = 30000;
 
 let lastPing = 'Chưa ping';
+let visitCount = 0;
+let lastVisitTime = 'Chưa có truy cập';
 
 function keepAlive() {
   const socket = new net.Socket();
@@ -30,7 +32,15 @@ function keepAlive() {
 
 // Web server để UptimeRobot ping
 app.get('/', (req, res) => {
-  res.send(`<h1>✅ VNC is alive!</h1><p>Last ping: ${lastPing}</p>`);
+  visitCount++;
+  lastVisitTime = new Date().toISOString();
+
+  res.send(`
+    <h1>✅ VNC is alive!</h1>
+    <p>Last ping: ${lastPing}</p>
+    <p>🔁 Số lượt truy cập: ${visitCount}</p>
+    <p>🕒 Truy cập gần nhất: ${lastVisitTime}</p>
+  `);
 });
 
 app.get('/ping', (req, res) => {
