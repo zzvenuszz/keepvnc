@@ -2,91 +2,144 @@ const net = require('net');
 const express = require('express');
 const app = express();
 
-// Cho phép cập nhật địa chỉ và cổng VNC
 let HOST = '0.tcp.jp.ngrok.io';
 let PORT = 11151;
-const INTERVAL = 30000; // 30 giây
+const INTERVAL = 30000;
 
 let lastPing = 'Chưa ping';
 let visitCount = 0;
 let lastVisitTime = 'Chưa có truy cập';
 
-// Middleware để xử lý dữ liệu từ form
 app.use(express.urlencoded({ extended: true }));
 
-// Hàm giữ kết nối VNC sống
+function now() {
+  return new Date().toLocaleString('vi-VN', { hour12: false });
+}
+
 function keepAlive() {
   const socket = new net.Socket();
-  socket.setTimeout(10000); // 10 giây timeout
+  socket.setTimeout(10000);
 
   socket.connect(PORT, HOST, () => {
-    lastPing = new Date().toISOString();
+    lastPing = now();
     console.log(`[${lastPing}] ✅ Ping VNC thành công: ${HOST}:${PORT}`);
     socket.destroy();
   });
 
   socket.on('error', (err) => {
-    console.error(`[${new Date().toISOString()}] ❌ Lỗi kết nối: ${err.message}`);
+    console.error(`[${now()}] ❌ Lỗi kết nối: ${err.message}`);
   });
 
   socket.on('timeout', () => {
-    console.warn(`[${new Date().toISOString()}] ⏰ Timeout`);
+    console.warn(`[${now()}] ⏰ Timeout`);
     socket.destroy();
   });
 }
 
-// Giao diện web chính
 app.get('/', (req, res) => {
   visitCount++;
-  lastVisitTime = new Date().toISOString();
+  lastVisitTime = now();
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
 
   console.log(`📥 Truy cập #${visitCount} lúc ${lastVisitTime} từ IP: ${ip}`);
 
   res.send(`
-    <h1>✅ VNC is alive!</h1>
-    <p>🔗 Địa chỉ đang ping: <strong>${HOST}:${PORT}</strong></p>
-    <p>Last ping: ${lastPing}</p>
-    <p>🔁 Số lượt truy cập: ${visitCount}</p>
-    <p>🕒 Truy cập gần nhất: ${lastVisitTime}</p>
-    <hr>
-    <h3>🔧 Cập nhật địa chỉ VNC</h3>
-    <form method="POST" action="/update">
-      <label>Host: <input type="text" name="host" value="${HOST}" required></label><br><br>
-      <label>Port: <input type="number" name="port" value="${PORT}" required></label><br><br>
-      <button type="submit">Cập nhật</button>
-    </form>
+    <html>
+    <head>
+      <title>VNC Keep Alive</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background: #f5f5f5;
+          color: #333;
+          max-width: 600px;
+          margin: 30px auto;
+          padding: 20px;
+          border-radius: 12px;
+          background-color: #fff;
+          box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+          color: #2b9348;
+        }
+        strong {
+          color: #0077b6;
+        }
+        label {
+          font-weight: bold;
+        }
+        input {
+          padding: 5px;
+          width: 100%;
+          margin-top: 4px;
+          margin-bottom: 10px;
+          border: 1px solid #ccc;
+          border-radius: 6px;
+        }
+        button {
+          padding: 10px 15px;
+          background-color: #2b9348;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+        button:hover {
+          background-color: #238636;
+        }
+        hr {
+          margin: 20px 0;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>✅ VNC is alive!</h1>
+      <p>🔗 <strong>Địa chỉ đang ping:</strong> ${HOST}:${PORT}</p>
+      <p>📡 <strong>Ping gần nhất:</strong> ${lastPing}</p>
+      <p>🔁 <strong>Số lượt truy cập:</strong> ${visitCount}</p>
+      <p>🕒 <strong>Truy cập gần nhất:</strong> ${lastVisitTime}</p>
+      <hr>
+      <h3>🔧 Cập nhật địa chỉ VNC</h3>
+      <form method="POST" action="/update">
+        <label>VNC Address (ip:port)</label>
+        <input type="text" name="vnc_address" value="${HOST}:${PORT}" required>
+        <button type="submit">Cập nhật</button>
+      </form>
+    </body>
+    </html>
   `);
 });
 
-// Xử lý cập nhật host và port
 app.post('/update', (req, res) => {
-  const { host, port } = req.body;
+  const { vnc_address } = req.body;
 
-  if (!host || !port || isNaN(Number(port))) {
-    return res.send('❌ Dữ liệu không hợp lệ.');
+  if (!vnc_address || !vnc_address.includes(':')) {
+    return res.send('❌ Dữ liệu không hợp lệ. Định dạng đúng là ip:port');
   }
 
-  HOST = host;
-  PORT = Number(port);
-  console.log(`🔄 Đã cập nhật VNC host: ${HOST}, port: ${PORT}`);
+  const [host, port] = vnc_address.split(':');
+
+  if (!host || !port || isNaN(Number(port))) {
+    return res.send('❌ Địa chỉ hoặc cổng không hợp lệ.');
+  }
+
+  HOST = host.trim();
+  PORT = Number(port.trim());
+  console.log(`[${now()}] 🔄 Đã cập nhật VNC host: ${HOST}, port: ${PORT}`);
   res.redirect('/');
 });
 
-// API cho UptimeRobot ping
 app.get('/ping', (req, res) => {
-  const time = new Date().toISOString();
+  const time = now();
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
   console.log(`📶 [${time}] Ping nhận từ ${ip}`);
   res.send(`OK: ${lastPing}`);
 });
 
-// Khởi chạy web server
 const WEB_PORT = process.env.PORT || 3000;
 app.listen(WEB_PORT, () => {
   console.log(`🌐 Web UI running at http://localhost:${WEB_PORT}`);
 });
 
-// Bắt đầu quá trình ping định kỳ
 keepAlive();
 setInterval(keepAlive, INTERVAL);
