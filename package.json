@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "rfb2": "github:sidorares/rfb2"
+    "rfb2": "https://github.com/sidorares/rfb2.git"
   }
 }
