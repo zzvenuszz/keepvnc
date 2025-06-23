@@ -104,7 +104,19 @@ app.get('/', (req, res) => {
           overflow: auto;
         }
       </style>
-    </head>
+    
+    <script>
+      function updateLogs() {
+        fetch('/logs')
+          .then(res => res.text())
+          .then(data => {
+            document.getElementById('log-box').innerText = data;
+          });
+      }
+      setInterval(updateLogs, 5000); // cập nhật mỗi 5 giây
+      window.onload = updateLogs;
+    </script>
+    
     <body>
       <h1>✅ VNC is alive!</h1>
       <p>🔗 <strong>Địa chỉ đang ping:</strong> ${HOST}:${PORT}</p>
@@ -120,7 +132,7 @@ app.get('/', (req, res) => {
       </form>
       <hr>
       <h3>📜 Log máy chủ</h3>
-      <pre>${logs.slice().reverse().join('\n')}</pre>
+      <pre id='log-box'>Đang tải log...</pre>
     </body>
     </html>
   `);
@@ -157,3 +169,10 @@ app.listen(WEB_PORT, () => {
 
 keepAlive();
 setInterval(keepAlive, INTERVAL);
+
+
+// Endpoint để trả log dưới dạng text
+app.get('/logs', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(logs.slice().reverse().join('\n'));
+});
