@@ -1,24 +1,16 @@
 {
-  "name": "single-file-cookie-reloader",
+  "name": "keep-vnc",
   "version": "1.0.0",
-  "description": "A web reloader with cookies in a single Node.js file.",
+  "description": "Ứng dụng Node.js giả truy cập trang web bằng cookies",
   "main": "keepVNC.js",
-  "type": "module",
   "scripts": {
     "start": "node keepVNC.js"
   },
-  "keywords": [
-    "nodejs",
-    "cookie",
-    "reload",
-    "scraper",
-    "web"
-  ],
-  "author": "Bui Huy Hoan",
-  "license": "ISC",
+  "author": "Hoàn",
+  "license": "MIT",
   "dependencies": {
-    "express": "^4.19.2",
-    "node-fetch": "^3.3.2",
-    "ws": "^8.18.0"
+    "axios": "^1.6.0",
+    "body-parser": "^1.20.2",
+    "express": "^4.18.2"
   }
 }
