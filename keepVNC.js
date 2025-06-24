@@ -3,86 +3,92 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const axios = require('axios');
-const path = require('path');
+
 const app = express();
 const PORT = 3000;
 
-let configPath = path.join(__dirname, 'config.json');
-let logPath = path.join(__dirname, 'log.txt');
+let configPath = 'config.json';
+let logPath = 'log.txt';
+let state = { running:false, interval:null };
+let config = { url:'', cookies:'' };
 
-let state = {
-  running: false,
-  interval: null
-};
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static('public'));
-
-// Load config nếu có
-let config = { url: '', cookies: '' };
+// load config nếu có
 if (fs.existsSync(configPath)) {
   config = JSON.parse(fs.readFileSync(configPath));
 }
 
-function log(message) {
-  const timestamp = new Date().toLocaleString();
-  const line = `[${timestamp}] ${message}\n`;
+// lưu log
+function log(msg) {
+  const t = new Date().toLocaleString();
+  const line = `[${t}] ${msg}\n`;
   fs.appendFileSync(logPath, line);
   console.log(line.trim());
 }
 
+// gửi request
 function sendRequest() {
   if (!config.url || !config.cookies) return;
-
   try {
-    const cookiesObj = JSON.parse(config.cookies);
-    const cookieStr = Object.entries(cookiesObj).map(([k, v]) => `${k}=${v}`).join('; ');
-    axios.get(config.url, {
-      headers: {
-        Cookie: cookieStr
-      }
-    })
-    .then(res => {
-      log(`✅ Request thành công - status: ${res.status}`);
-    })
-    .catch(err => {
-      log(`❌ Lỗi khi request: ${err.message}`);
-    });
-  } catch (e) {
-    log(`❌ Lỗi xử lý cookies: ${e.message}`);
+    const obj = JSON.parse(config.cookies);
+    const s = Object.entries(obj).map(([k,v])=>`${k}=${v}`).join('; ');
+    axios.get(config.url, { headers:{ Cookie: s } })
+      .then(r => log(`✅ Status: ${r.status}`))
+      .catch(e => log(`❌ Error: ${e.message}`));
+  } catch(e) {
+    log(`❌ Cookie JSON sai: ${e.message}`);
   }
 }
 
-app.get('/config', (req, res) => {
-  res.json(config);
+// middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// trang chính
+app.get('/', (req, res) => {
+  const button = state.running ? 'Stop' : 'Start';
+  res.send(`
+    <html><body style="font-family:sans-serif">
+      <h3>KeepVNC – Giả truy cập bằng Cookie</h3>
+      <form method="POST" action="/toggle">
+        URL: <input name="url" style="width:300px" value="${config.url}"/><br/>
+        Cookies JSON: <textarea name="cookies" rows="4" cols="50">${config.cookies}</textarea><br/>
+        <button type="submit">${button}</button>
+      </form>
+      <pre id="log" style="border:1px solid #ccc; padding:10px; height:300px; overflow:auto"></pre>
+      <script>
+        function refresh() {
+          fetch('/log').then(r=>r.text()).then(t=>{
+            document.getElementById('log').textContent = t;
+            setTimeout(refresh,5000);
+          });
+        }
+        refresh();
+      </script>
+    </body></html>
+  `);
 });
 
-app.post('/start', (req, res) => {
+// bật/tắt
+app.post('/toggle', (req, res) => {
   const { url, cookies } = req.body;
   config = { url, cookies };
   fs.writeFileSync(configPath, JSON.stringify(config));
 
-  if (state.running && state.interval) clearInterval(state.interval);
-
-  state.running = true;
-  state.interval = setInterval(sendRequest, 5000);
-  log(`🚀 Bắt đầu giả truy cập: ${url}`);
-  res.json({ success: true });
+  if (state.running) {
+    clearInterval(state.interval);
+    state.running = false;
+    log('🛑 Stopped');
+  } else {
+    state.interval = setInterval(sendRequest, 5000);
+    state.running = true;
+    log('🚀 Started');
+  }
+  res.redirect('/');
 });
 
-app.post('/stop', (req, res) => {
-  if (state.running && state.interval) clearInterval(state.interval);
-  state.running = false;
-  log(`🛑 Đã dừng gửi request.`);
-  res.json({ success: true });
-});
-
+// trả log
 app.get('/log', (req, res) => {
-  if (!fs.existsSync(logPath)) return res.send('');
-  res.send(fs.readFileSync(logPath, 'utf8'));
+  const t = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
+  res.send(t);
 });
 
-app.listen(PORT, () => {
-  console.log(`📡 Server đang chạy tại http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server chạy http://localhost:${PORT}`));
