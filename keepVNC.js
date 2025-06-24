@@ -417,10 +417,10 @@ const htmlContent = `
             function appendLog(message, type = 'info') {
                 const span = document.createElement('span');
                 span.classList.add(type);
-                span.textContent = \`[\${new Date().toLocaleTimeString('vi-VN', { hour12: false })}] \${message}\\n\`;
+                span.textContent = '[' + new Date().toLocaleTimeString('vi-VN', { hour12: false }) + '] ' + message + '\\n';
                 logArea.appendChild(span);
                 logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
-                console.log(\`[CLIENT LOG WEB] [\${type.toUpperCase()}] \${message}\`); // Ghi log ra console trình duyệt
+                console.log('[CLIENT LOG WEB] [' + type.toUpperCase() + '] ' + message); // Ghi log ra console trình duyệt
             }
 
             // Tải dữ liệu đã lưu từ server khi trang load
@@ -428,10 +428,10 @@ const htmlContent = `
             try {
                 const response = await fetch('/load-data');
                 if (!response.ok) {
-                    throw new Error(\`HTTP error! status: \${response.status}\`);
+                    throw new Error('HTTP error! status: ' + response.status);
                 }
                 const data = await response.json();
-                console.log(`[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: '\${data.url}', Cookies: \${data.cookies ? data.cookies.length : 0} mục.`);
+                console.log('[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: \'' + data.url + '\', Cookies: ' + (data.cookies ? data.cookies.length : 0) + ' mục.');
                 
                 if (data.url) {
                     urlInput.value = data.url;
@@ -444,8 +444,8 @@ const htmlContent = `
                 appendLog('Đã tải dữ liệu cấu hình từ server.', 'info');
                 console.log('[CLIENT JS] Đã điền dữ liệu vào input form.');
             } catch (error) {
-                appendLog(\`Lỗi khi tải dữ liệu cấu hình từ server: \${error.message}\`, 'error');
-                console.error(\`[CLIENT JS LỖI] Lỗi khi tải dữ liệu cấu hình từ server: \${error.message}\`);
+                appendLog('Lỗi khi tải dữ liệu cấu hình từ server: ' + error.message, 'error');
+                console.error('[CLIENT JS LỖI] Lỗi khi tải dữ liệu cấu hình từ server: ' + error.message);
             }
 
 
@@ -455,8 +455,8 @@ const htmlContent = `
                     console.log('[CLIENT JS] WebSocket đã mở, không cần kết nối lại.');
                     return;
                 }
-                ws = new WebSocket(\`ws://\${window.location.host}/ws\`);
-                console.log(\`[CLIENT JS] Đang cố gắng kết nối WebSocket tới ws://\${window.location.host}/ws...\`);
+                ws = new WebSocket('ws://' + window.location.host + '/ws');
+                console.log('[CLIENT JS] Đang cố gắng kết nối WebSocket tới ws://' + window.location.host + '/ws...');
 
                 ws.onopen = () => {
                     appendLog('Đã kết nối với Server WebSocket.', 'info');
@@ -467,24 +467,24 @@ const htmlContent = `
                     try {
                         const logData = JSON.parse(event.data);
                         appendLog(logData.message, logData.type);
-                        console.log(\`[CLIENT JS] Nhận tin nhắn log từ server qua WS: [\${logData.type.toUpperCase()}] \${logData.message}\`);
+                        console.log('[CLIENT JS] Nhận tin nhắn log từ server qua WS: [' + logData.type.toUpperCase() + '] ' + logData.message);
                     } catch (e) {
-                        appendLog(\`Received raw WS message: \${event.data}\`, 'info');
-                        console.warn(\`[CLIENT JS] Không thể parse tin nhắn WS: \${event.data}. Lỗi: \${e.message}\`);
+                        appendLog('Received raw WS message: ' + event.data, 'info');
+                        console.warn('[CLIENT JS] Không thể parse tin nhắn WS: ' + event.data + '. Lỗi: ' + e.message);
                     }
                 };
 
                 ws.onclose = (event) => {
-                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \${event.code}, Lý do: \${event.reason}\`, 'warning');
-                    console.warn(\`[CLIENT JS] Kết nối WebSocket đóng. Mã: \${event.code}, Lý do: \${event.reason}\`);
+                    appendLog('Kết nối WebSocket đã đóng. Mã: ' + event.code + ', Lý do: ' + event.reason, 'warning');
+                    console.warn('[CLIENT JS] Kết nối WebSocket đóng. Mã: ' + event.code + ', Lý do: ' + event.reason);
                     // Thử kết nối lại sau một khoảng thời gian
                     console.log('[CLIENT JS] Đang thử kết nối lại WebSocket sau 3 giây...');
                     setTimeout(connectWebSocket, 3000);
                 };
 
                 ws.onerror = (error) => {
-                    appendLog(\`Lỗi WebSocket: \${error.message}\`, 'error');
-                    console.error(\`[CLIENT JS LỖI] Lỗi WebSocket: \${error.message}\`);
+                    appendLog('Lỗi WebSocket: ' + error.message, 'error');
+                    console.error('[CLIENT JS LỖI] Lỗi WebSocket: ' + error.message);
                     ws.close();
                 };
             }
@@ -498,7 +498,7 @@ const htmlContent = `
 
                 try {
                     const cookieText = cookieInput.value.trim();
-                    console.log(`[CLIENT JS] Nội dung Cookie input (100 ký tự đầu): ${cookieText.substring(0, 100)}...`);
+                    console.log('[CLIENT JS] Nội dung Cookie input (100 ký tự đầu): ' + cookieText.substring(0, 100) + '...');
                     if (cookieText) {
                         if (cookieText.includes('=')) {
                             appendLog('Bạn có vẻ đã dán chuỗi cookie thô. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
@@ -509,14 +509,14 @@ const htmlContent = `
                         if (!Array.isArray(cookies) || cookies.some(c => typeof c !== 'object' || !c.name || !c.value)) {
                             throw new Error('Định dạng cookie JSON không hợp lệ. Phải là một mảng các đối tượng có thuộc tính "name" và "value".');
                         }
-                        console.log(`[CLIENT JS] Cookies đã parse thành công: ${cookies.length} mục.`);
+                        console.log('[CLIENT JS] Cookies đã parse thành công: ' + cookies.length + ' mục.');
                     } else {
                         appendLog('Cảnh báo: Không có cookie nào được nhập. Trang web có thể không duy trì trạng thái đăng nhập.', 'warning');
                         console.warn('[CLIENT JS] Cảnh báo: Không có cookie nào được nhập từ input.');
                     }
                 } catch (error) {
-                    appendLog(\`Lỗi parse cookie: \${error.message}\`, 'error');
-                    console.error(\`[CLIENT JS LỖI] Lỗi khi parse cookie: \${error.message}\`);
+                    appendLog('Lỗi parse cookie: ' + error.message, 'error');
+                    console.error('[CLIENT JS LỖI] Lỗi khi parse cookie: ' + error.message);
                     return;
                 }
 
@@ -533,7 +533,7 @@ const htmlContent = `
 
                 appendLog('Đang gửi yêu cầu bắt đầu reload đến server...', 'info');
                 console.log('[CLIENT JS] Đang gửi POST request tới /start-reload...');
-                console.log(`[CLIENT JS] Dữ liệu gửi đi: URL='${url}', Cookies: ${cookies.length} mục.`);
+                console.log('[CLIENT JS] Dữ liệu gửi đi: URL=\'' + url + '\', Cookies: ' + cookies.length + ' mục.');
 
                 try {
                     const response = await fetch('/start-reload', {
@@ -544,18 +544,18 @@ const htmlContent = `
                         body: JSON.stringify({ url, cookies }),
                     });
 
-                    console.log(`[CLIENT JS] Đã nhận phản hồi từ /start-reload. Status: \${response.status}.`);
+                    console.log('[CLIENT JS] Đã nhận phản hồi từ /start-reload. Status: ' + response.status + '.');
                     const data = await response.json();
                     if (response.ok) {
-                        appendLog(\`Server phản hồi: \${data.message} - URL: \${data.url}\`, 'success');
-                        console.log(\`[CLIENT JS] Server phản hồi thành công: \${data.message}\`);
+                        appendLog('Server phản hồi: ' + data.message + ' - URL: ' + data.url, 'success');
+                        console.log('[CLIENT JS] Server phản hồi thành công: ' + data.message);
                     } else {
-                        appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
-                        console.error(\`[CLIENT JS] Server phản hồi lỗi: \${data.message || 'Không rõ lỗi'}\`);
+                        appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
+                        console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
                     }
                 } catch (error) {
-                    appendLog(\`Lỗi kết nối đến server: \${error.message}. Đảm bảo server Node.js đang chạy.\`, 'error');
-                    console.error(\`[CLIENT JS LỖI] Lỗi kết nối đến server: \${error.message}\`);
+                    appendLog('Lỗi kết nối đến server: ' + error.message + '. Đảm bảo server Node.js đang chạy.', 'error');
+                    console.error('[CLIENT JS LỖI] Lỗi kết nối đến server: ' + error.message);
                 }
             });
 
@@ -570,18 +570,18 @@ const htmlContent = `
                         },
                     });
 
-                    console.log(`[CLIENT JS] Đã nhận phản hồi từ /stop-reload. Status: \${response.status}.`);
+                    console.log('[CLIENT JS] Đã nhận phản hồi từ /stop-reload. Status: ' + response.status + '.');
                     const data = await response.json();
                     if (response.ok) {
-                        appendLog(\`Server phản hồi: \${data.message}\`, 'success');
-                        console.log(\`[CLIENT JS] Server phản hồi thành công: \${data.message}\`);
+                        appendLog('Server phản hồi: ' + data.message, 'success');
+                        console.log('[CLIENT JS] Server phản hồi thành công: ' + data.message);
                     } else {
-                        appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
-                        console.error(\`[CLIENT JS] Server phản hồi lỗi: \${data.message || 'Không rõ lỗi'}\`);
+                        appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
+                        console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
                     }
                 } catch (error) {
-                    appendLog(\`Lỗi kết nối đến server: \${error.message}\`, 'error');
-                    console.error(\`[CLIENT JS LỖI] Lỗi kết nối đến server: \${error.message}\`);
+                    appendLog('Lỗi kết nối đến server: ' + error.message, 'error');
+                    console.error('[CLIENT JS LỖI] Lỗi kết nối đến server: ' + error.message);
                 }
             });
         });
