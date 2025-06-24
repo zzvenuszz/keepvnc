@@ -1,7 +1,7 @@
 {
   "name": "keep-vnc",
   "version": "1.0.0",
-  "description": "Ứng dụng Node.js sử dụng Access Token để truy cập Google Cloud Workstations",
+  "description": "Node.js app dùng Access Token để truy cập Google Cloud Workstations",
   "main": "keepVNC.js",
   "scripts": {
     "start": "node keepVNC.js"
