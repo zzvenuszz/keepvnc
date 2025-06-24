@@ -24,26 +24,35 @@ let currentCookies = [];
 
 // Hàm khởi tạo: đọc dữ liệu đã lưu từ file khi server khởi động
 async function loadSavedData() {
+    console.log('[SERVER - KHỞI TẠO] Bắt đầu tải dữ liệu cấu hình...');
     try {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const parsedData = JSON.parse(data);
         currentTargetUrl = parsedData.url || '';
         currentCookies = parsedData.cookies || [];
+        
+        console.log(`[SERVER - KHỞI TẠO] Đã đọc file '${DATA_FILE}'. URL: '${currentTargetUrl}', Cookies: ${currentCookies.length} mục.`);
+        
+        // Gửi log qua WebSocket cho client
         sendLogToClients('Đã tải dữ liệu cấu hình từ server.', 'info');
 
-        // *** THAY ĐỔI QUAN TRỌNG: Tự động bắt đầu reload nếu có dữ liệu ***
+        // Tự động bắt đầu reload nếu có dữ liệu hợp lệ
         if (currentTargetUrl && currentCookies.length > 0) {
-            startReloadProcess(currentTargetUrl, currentCookies); // Hàm mới để bắt đầu reload
+            startReloadProcess(currentTargetUrl, currentCookies);
+            console.log('[SERVER - KHỞI TẠO] Tự động bắt đầu quá trình reload với dữ liệu đã tải.');
             sendLogToClients('Đã tự động bắt đầu quá trình reload dựa trên dữ liệu đã lưu.', 'info');
         } else {
+            console.log('[SERVER - KHỞI TẠO] Không có dữ liệu cấu hình đầy đủ để tự động reload.');
             sendLogToClients('Không có dữ liệu cấu hình được lưu hoặc dữ liệu không đầy đủ. Sẽ không tự động reload.', 'warning');
         }
 
     } catch (error) {
         if (error.code === 'ENOENT') {
+            console.warn(`[SERVER - KHỞI TẠO] File dữ liệu cấu hình '${DATA_FILE}' chưa tồn tại. Sẽ tạo mới khi có dữ liệu được lưu.`);
             sendLogToClients('File dữ liệu cấu hình chưa tồn tại. Sẽ tạo mới khi lưu.', 'warning');
             await saveCurrentData(); // Lưu dữ liệu rỗng ban đầu nếu file không tồn tại
         } else {
+            console.error(`[SERVER - KHỞI TẠO LỖI] Lỗi khi tải dữ liệu cấu hình từ file: ${error.message}`);
             sendLogToClients(`Lỗi khi tải dữ liệu cấu hình: ${error.message}`, 'error');
         }
     }
@@ -55,10 +64,13 @@ async function saveCurrentData() {
         url: currentTargetUrl,
         cookies: currentCookies
     };
+    console.log(`[SERVER - LƯU DỮ LIỆU] Đang lưu URL: '${currentTargetUrl}', Cookies: ${currentCookies.length} mục vào file.`);
     try {
         await fs.writeFile(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+        console.log(`[SERVER - LƯU DỮ LIỆU] Đã lưu dữ liệu cấu hình vào file '${DATA_FILE}' thành công.`);
         sendLogToClients('Đã lưu dữ liệu cấu hình vào server.', 'info');
     } catch (error) {
+        console.error(`[SERVER - LƯU DỮ LIỆU LỖI] Lỗi khi lưu dữ liệu cấu hình vào file: ${error.message}`);
         sendLogToClients(`Lỗi khi lưu dữ liệu cấu hình: ${error.message}`, 'error');
     }
 }
@@ -74,36 +86,47 @@ function sendLogToClients(message, type = 'info') {
         message: message,
         type: type
     };
+    // Ghi log ra console của Node.js server
+    console.log(`[SERVER WS -> CLIENTS] [${formattedMessage.timestamp}] [${formattedMessage.type.toUpperCase()}] ${formattedMessage.message}`);
+    
     wss.clients.forEach(client => {
         if (client.readyState === client.OPEN) {
             client.send(JSON.stringify(formattedMessage));
         }
     });
-    // Ghi log ra console của Node.js server
-    console.log(`[${formattedMessage.timestamp}] [${formattedMessage.type.toUpperCase()}] ${formattedMessage.message}`);
 }
 
 // Hàm chuyển đổi JSON cookie sang chuỗi định dạng header
 function convertCookiesJsonToString(cookiesJson) {
     if (!Array.isArray(cookiesJson)) {
+        console.warn('[SERVER - COOKIE] Dữ liệu cookie không phải mảng. Trả về chuỗi rỗng.');
         return '';
     }
-    return cookiesJson
+    const cookieString = cookiesJson
         .filter(cookie => cookie.name && cookie.value)
         .map(cookie => `${cookie.name}=${cookie.value}`)
         .join('; ');
+    console.log(`[SERVER - COOKIE] Đã chuyển đổi ${cookiesJson.length} cookie thành chuỗi (dài ${cookieString.length} ký tự).`);
+    return cookieString;
 }
 
 // Hàm thực hiện việc reload trang
 async function performReload() {
-    if (!currentTargetUrl || currentCookies.length === 0) {
-        // Không gửi log liên tục nếu chưa có cấu hình để tránh spam
-        // sendLogToClients('Chưa có URL hoặc cookie để reload. Vui lòng cấu hình.', 'warning');
+    console.log('[SERVER - RELOAD] Bắt đầu thực hiện reload trang.');
+    if (!currentTargetUrl) {
+        console.warn('[SERVER - RELOAD] Bỏ qua reload: currentTargetUrl rỗng.');
+        sendLogToClients('Chưa có URL để reload. Vui lòng cấu hình.', 'warning');
         return;
+    }
+    if (currentCookies.length === 0) {
+        console.warn('[SERVER - RELOAD] Cảnh báo: currentCookies rỗng. Reload có thể không duy trì trạng thái đăng nhập.');
+        sendLogToClients('Cảnh báo: Không có cookie nào được cấu hình. Reload có thể không duy trì trạng thái đăng nhập.', 'warning');
     }
 
     const cookiesString = convertCookiesJsonToString(currentCookies);
     sendLogToClients(`Đang tải lại: ${currentTargetUrl}`, 'info');
+    console.log(`[SERVER - RELOAD] Gửi yêu cầu GET tới: '${currentTargetUrl}'`);
+    console.log(`[SERVER - RELOAD] Sử dụng Cookie Header: '${cookiesString.substring(0, 50)}...' (chỉ hiển thị 50 ký tự đầu)`); // Log 50 ký tự đầu của cookie
 
     try {
         const response = await fetch(currentTargetUrl, {
@@ -116,41 +139,55 @@ async function performReload() {
             }
         });
 
+        console.log(`[SERVER - RELOAD] Nhận được phản hồi HTTP. Status: ${response.status} ${response.statusText}`);
+
         if (response.ok) {
-            const text = await response.text();
+            const text = await response.text(); // Đọc toàn bộ phản hồi
             const logMessage = `SUCCESS: ${currentTargetUrl} - Status: ${response.status}`;
             sendLogToClients(logMessage, 'success');
+            console.log(`[SERVER - RELOAD] Reload thành công. Status: ${response.status}.`);
 
             // Kiểm tra dấu hiệu đăng nhập đơn giản (ví dụ với Google)
             if (currentTargetUrl.includes('google.com') && text.includes('Sign in') && !text.includes('Sign out')) {
                  sendLogToClients('Có vẻ như phiên đăng nhập đã hết hạn hoặc không hoạt động.', 'warning');
+                 console.warn('[SERVER - RELOAD] Phát hiện dấu hiệu phiên đăng nhập hết hạn.');
             } else {
                  sendLogToClients('Trạng thái đăng nhập có vẻ được duy trì.', 'info');
+                 console.log('[SERVER - RELOAD] Trạng thái đăng nhập có vẻ được duy trì.');
             }
 
         } else {
             const logMessage = `FAILED: ${currentTargetUrl} - Status: ${response.status} ${response.statusText}`;
             sendLogToClients(logMessage, 'error');
+            console.error(`[SERVER - RELOAD LỖI] Reload thất bại. Status: ${response.status} ${response.statusText}`);
         }
     } catch (error) {
         const logMessage = `ERROR: ${currentTargetUrl} - ${error.message}`;
         sendLogToClients(logMessage, 'error');
+        console.error(`[SERVER - RELOAD LỖI] Lỗi khi thực hiện fetch URL: ${error.name}: ${error.message}`);
     }
 }
 
 // Hàm tách riêng logic bắt đầu reload để có thể gọi từ nhiều nơi
 function startReloadProcess(url, cookies) {
+    console.log(`[SERVER - ĐIỀU KHIỂN] Yêu cầu bắt đầu/cập nhật quá trình reload.`);
+    
+    // Cập nhật biến toàn cục
     currentTargetUrl = url;
     currentCookies = cookies;
 
     if (reloadIntervalId) {
         clearInterval(reloadIntervalId); // Dừng nếu đang chạy
+        console.log('[SERVER - ĐIỀU KHIỂN] Đã dừng interval reload cũ (nếu có).');
     }
 
     performReload(); // Chạy lần đầu tiên ngay lập tức
+    console.log('[SERVER - ĐIỀU KHIỂN] Đã thực hiện reload lần đầu.');
 
     // Thiết lập interval để chạy lại mỗi 5 giây
     reloadIntervalId = setInterval(performReload, 5000); // 5 giây
+    console.log('[SERVER - ĐIỀU KHIỂN] Đã thiết lập interval reload mới, chu kỳ 5 giây.');
+    sendLogToClients('Đã bắt đầu reload định kỳ mỗi 5 giây.', 'info');
 }
 
 
@@ -158,33 +195,44 @@ function startReloadProcess(url, cookies) {
 
 // API để tải dữ liệu đã lưu trữ từ server
 app.get('/load-data', (req, res) => {
+    console.log('[SERVER - API] Nhận yêu cầu GET /load-data từ client.');
     res.json({
         url: currentTargetUrl,
         cookies: currentCookies
     });
+    console.log(`[SERVER - API] Đã gửi dữ liệu cấu hình về client. URL: '${currentTargetUrl}', Cookies: ${currentCookies.length} mục.`);
 });
 
-app.post('/start-reload', async (req, res) => { // Thêm async ở đây
+app.post('/start-reload', async (req, res) => {
+    console.log('[SERVER - API] Nhận yêu cầu POST /start-reload từ client.');
     const { url, cookies } = req.body;
+    console.log(`[SERVER - API] Dữ liệu nhận được: URL='${url}', Cookies: ${cookies ? cookies.length : 0} mục.`);
 
     if (!url || !cookies || !Array.isArray(cookies)) {
-        return res.status(400).json({ message: 'URL và Cookie (dạng mảng JSON) không được trống.' });
+        console.error('[SERVER - API LỖI] Yêu cầu /start-reload thiếu URL hoặc Cookie (hoặc định dạng sai).');
+        return res.status(400).json({ message: 'URL và Cookie (dạng mảng JSON) không được trống hoặc định dạng không đúng.' });
     }
+    
+    // Gọi hàm điều khiển quá trình reload
+    startReloadProcess(url, cookies);
 
-    startReloadProcess(url, cookies); // Gọi hàm bắt đầu reload
-
-    await saveCurrentData(); // Lưu dữ liệu vào file ngay sau khi cập nhật
+    // Lưu dữ liệu vào file ngay sau khi cập nhật
+    await saveCurrentData();
 
     res.json({ message: 'Bắt đầu reload trang định kỳ.', url: currentTargetUrl });
+    console.log(`[SERVER - API] Phản hồi thành công cho /start-reload. Reload đang chạy cho URL: '${url}'.`);
 });
 
 app.post('/stop-reload', (req, res) => {
+    console.log('[SERVER - API] Nhận yêu cầu POST /stop-reload từ client.');
     if (reloadIntervalId) {
         clearInterval(reloadIntervalId);
         reloadIntervalId = null;
+        console.log('[SERVER - API] Đã dừng interval reload.');
         sendLogToClients('Đã tạm dừng reload trang.', 'info');
         res.json({ message: 'Đã tạm dừng reload trang.' });
     } else {
+        console.log('[SERVER - API] Reload chưa được chạy, không có gì để dừng.');
         res.json({ message: 'Reload chưa được chạy.' });
     }
 });
@@ -372,53 +420,71 @@ const htmlContent = `
                 span.textContent = \`[\${new Date().toLocaleTimeString('vi-VN', { hour12: false })}] \${message}\\n\`;
                 logArea.appendChild(span);
                 logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
-                console.log(\`[Log Web] [\${type.toUpperCase()}] \${message}\`); // Ghi log ra console trình duyệt
+                console.log(\`[CLIENT LOG WEB] [\${type.toUpperCase()}] \${message}\`); // Ghi log ra console trình duyệt
             }
 
             // Tải dữ liệu đã lưu từ server khi trang load
+            console.log('[CLIENT JS] Bắt đầu tải dữ liệu cấu hình từ server...');
             try {
                 const response = await fetch('/load-data');
+                if (!response.ok) {
+                    throw new Error(\`HTTP error! status: \${response.status}\`);
+                }
                 const data = await response.json();
+                console.log(`[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: '\${data.url}', Cookies: \${data.cookies ? data.cookies.length : 0} mục.`);
+                
                 if (data.url) {
                     urlInput.value = data.url;
                 }
                 if (data.cookies && data.cookies.length > 0) {
                     cookieInput.value = JSON.stringify(data.cookies, null, 2); // Định dạng lại JSON cho dễ đọc
+                } else if (data.cookies && data.cookies.length === 0) {
+                     cookieInput.value = '[]'; // Đặt giá trị rỗng nếu không có cookie
                 }
                 appendLog('Đã tải dữ liệu cấu hình từ server.', 'info');
+                console.log('[CLIENT JS] Đã điền dữ liệu vào input form.');
             } catch (error) {
                 appendLog(\`Lỗi khi tải dữ liệu cấu hình từ server: \${error.message}\`, 'error');
+                console.error(\`[CLIENT JS LỖI] Lỗi khi tải dữ liệu cấu hình từ server: \${error.message}\`);
             }
 
 
             // Thiết lập kết nối WebSocket
             function connectWebSocket() {
                 if (ws && ws.readyState === ws.OPEN) {
+                    console.log('[CLIENT JS] WebSocket đã mở, không cần kết nối lại.');
                     return;
                 }
                 ws = new WebSocket(\`ws://\${window.location.host}/ws\`);
+                console.log(\`[CLIENT JS] Đang cố gắng kết nối WebSocket tới ws://\${window.location.host}/ws...\`);
 
                 ws.onopen = () => {
                     appendLog('Đã kết nối với Server WebSocket.', 'info');
+                    console.log('[CLIENT JS] Kết nối WebSocket thành công.');
                 };
 
                 ws.onmessage = (event) => {
                     try {
                         const logData = JSON.parse(event.data);
                         appendLog(logData.message, logData.type);
+                        console.log(\`[CLIENT JS] Nhận tin nhắn log từ server qua WS: [\${logData.type.toUpperCase()}] \${logData.message}\`);
                     } catch (e) {
                         appendLog(\`Received raw WS message: \${event.data}\`, 'info');
+                        console.warn(\`[CLIENT JS] Không thể parse tin nhắn WS: \${event.data}. Lỗi: \${e.message}\`);
                     }
                 };
 
                 ws.onclose = (event) => {
                     appendLog(\`Kết nối WebSocket đã đóng. Mã: \${event.code}, Lý do: \${event.reason}\`, 'warning');
+                    console.warn(\`[CLIENT JS] Kết nối WebSocket đóng. Mã: \${event.code}, Lý do: \${event.reason}\`);
                     // Thử kết nối lại sau một khoảng thời gian
+                    console.log('[CLIENT JS] Đang thử kết nối lại WebSocket sau 3 giây...');
                     setTimeout(connectWebSocket, 3000);
                 };
 
                 ws.onerror = (error) => {
                     appendLog(\`Lỗi WebSocket: \${error.message}\`, 'error');
+                    console.error(\`[CLIENT JS LỖI] Lỗi WebSocket: \${error.message}\`);
                     ws.close();
                 };
             }
@@ -426,39 +492,48 @@ const htmlContent = `
             connectWebSocket(); // Kết nối WebSocket ngay khi tải trang
 
             startButton.addEventListener('click', async () => {
+                console.log('[CLIENT JS] Nút "Bắt đầu Reload" được nhấn.');
                 const url = urlInput.value.trim();
                 let cookies = [];
 
                 try {
                     const cookieText = cookieInput.value.trim();
+                    console.log(`[CLIENT JS] Nội dung Cookie input (100 ký tự đầu): ${cookieText.substring(0, 100)}...`);
                     if (cookieText) {
-                        // Kiểm tra nếu chuỗi có dấu bằng, khả năng là chuỗi cookie thô
                         if (cookieText.includes('=')) {
                             appendLog('Bạn có vẻ đã dán chuỗi cookie thô. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
+                            console.warn('[CLIENT JS] Cảnh báo: Định dạng cookie không phải JSON array. Phát hiện dấu "=".');
                             return;
                         }
                         cookies = JSON.parse(cookieText);
                         if (!Array.isArray(cookies) || cookies.some(c => typeof c !== 'object' || !c.name || !c.value)) {
                             throw new Error('Định dạng cookie JSON không hợp lệ. Phải là một mảng các đối tượng có thuộc tính "name" và "value".');
                         }
+                        console.log(`[CLIENT JS] Cookies đã parse thành công: ${cookies.length} mục.`);
                     } else {
                         appendLog('Cảnh báo: Không có cookie nào được nhập. Trang web có thể không duy trì trạng thái đăng nhập.', 'warning');
+                        console.warn('[CLIENT JS] Cảnh báo: Không có cookie nào được nhập từ input.');
                     }
                 } catch (error) {
                     appendLog(\`Lỗi parse cookie: \${error.message}\`, 'error');
+                    console.error(\`[CLIENT JS LỖI] Lỗi khi parse cookie: \${error.message}\`);
                     return;
                 }
 
                 if (!url) {
                     appendLog('Vui lòng nhập địa chỉ trang web.', 'error');
+                    console.error('[CLIENT JS] Lỗi: URL trống. Không thể tiếp tục.');
                     return;
                 }
                 if (!url.startsWith('http://') && !url.startsWith('https://')) {
                     appendLog('Địa chỉ URL phải bắt đầu bằng http:// hoặc https://', 'error');
+                    console.error('[CLIENT JS] Lỗi: URL không hợp lệ (thiếu http:// hoặc https://).');
                     return;
                 }
 
-                appendLog('Đang gửi yêu cầu bắt đầu reload...', 'info');
+                appendLog('Đang gửi yêu cầu bắt đầu reload đến server...', 'info');
+                console.log('[CLIENT JS] Đang gửi POST request tới /start-reload...');
+                console.log(`[CLIENT JS] Dữ liệu gửi đi: URL='${url}', Cookies: ${cookies.length} mục.`);
 
                 try {
                     const response = await fetch('/start-reload', {
@@ -469,19 +544,24 @@ const htmlContent = `
                         body: JSON.stringify({ url, cookies }),
                     });
 
+                    console.log(`[CLIENT JS] Đã nhận phản hồi từ /start-reload. Status: \${response.status}.`);
                     const data = await response.json();
                     if (response.ok) {
                         appendLog(\`Server phản hồi: \${data.message} - URL: \${data.url}\`, 'success');
+                        console.log(\`[CLIENT JS] Server phản hồi thành công: \${data.message}\`);
                     } else {
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
+                        console.error(\`[CLIENT JS] Server phản hồi lỗi: \${data.message || 'Không rõ lỗi'}\`);
                     }
                 } catch (error) {
                     appendLog(\`Lỗi kết nối đến server: \${error.message}. Đảm bảo server Node.js đang chạy.\`, 'error');
+                    console.error(\`[CLIENT JS LỖI] Lỗi kết nối đến server: \${error.message}\`);
                 }
             });
 
             stopButton.addEventListener('click', async () => {
-                appendLog('Đang gửi yêu cầu tạm dừng reload...', 'info');
+                console.log('[CLIENT JS] Nút "Tạm dừng" được nhấn.');
+                appendLog('Đang gửi yêu cầu tạm dừng reload đến server...', 'info');
                 try {
                     const response = await fetch('/stop-reload', {
                         method: 'POST',
@@ -490,14 +570,18 @@ const htmlContent = `
                         },
                     });
 
+                    console.log(`[CLIENT JS] Đã nhận phản hồi từ /stop-reload. Status: \${response.status}.`);
                     const data = await response.json();
                     if (response.ok) {
                         appendLog(\`Server phản hồi: \${data.message}\`, 'success');
+                        console.log(\`[CLIENT JS] Server phản hồi thành công: \${data.message}\`);
                     } else {
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
+                        console.error(\`[CLIENT JS] Server phản hồi lỗi: \${data.message || 'Không rõ lỗi'}\`);
                     }
                 } catch (error) {
                     appendLog(\`Lỗi kết nối đến server: \${error.message}\`, 'error');
+                    console.error(\`[CLIENT JS LỖI] Lỗi kết nối đến server: \${error.message}\`);
                 }
             });
         });
@@ -508,29 +592,32 @@ const htmlContent = `
 
 // Middleware để phục vụ HTML content trực tiếp từ Express
 app.get('/', (req, res) => {
+    console.log('[SERVER - WEB] Nhận yêu cầu GET / từ trình duyệt. Đang gửi HTML.');
     res.send(htmlContent);
 });
 
 // Lắng nghe cổng HTTP
-const server = app.listen(PORT, async () => { // Thêm async ở đây
-    console.log(`Server đang chạy tại http://localhost:${PORT}`);
+const server = app.listen(PORT, async () => {
+    console.log(`[SERVER - KHỞI ĐỘNG] Server đang chạy và lắng nghe tại http://localhost:${PORT}`);
     await loadSavedData(); // Tải dữ liệu khi server khởi động
 });
 
 // Nâng cấp kết nối HTTP lên WebSocket khi có yêu cầu
 server.on('upgrade', (request, socket, head) => {
+    console.log(`[SERVER - WEBSOCKET] Nhận yêu cầu nâng cấp WebSocket cho URL: ${request.url}`);
     if (request.url === '/ws') {
         wss.handleUpgrade(request, socket, head, ws => {
             wss.emit('connection', ws, request);
         });
     } else {
+        console.warn('[SERVER - WEBSOCKET] Từ chối nâng cấp WebSocket: URL không khớp /ws');
         socket.destroy();
     }
 });
 
 // Xử lý kết nối WebSocket
 wss.on('connection', ws => {
-    console.log('Client WebSocket đã kết nối.');
-    ws.on('close', () => console.log('Client WebSocket đã ngắt kết nối.'));
-    ws.on('error', error => console.error('Lỗi WebSocket:', error));
+    console.log('[SERVER - WEBSOCKET] Một client WebSocket mới đã kết nối.');
+    ws.on('close', () => console.log('[SERVER - WEBSOCKET] Một client WebSocket đã ngắt kết nối.'));
+    ws.on('error', error => console.error('[SERVER - WEBSOCKET LỖI] Lỗi WebSocket:', error.message));
 });
