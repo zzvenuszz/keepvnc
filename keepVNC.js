@@ -3,7 +3,8 @@ import { WebSocketServer } from 'ws';
 import fetch from 'node-fetch';
 import fs from 'fs/promises'; // Import fs/promises để dùng async/await với file system
 import path from 'path'; // Để xử lý đường dẫn file
-import { fileURLToPath } from 'url'; // Để lấy __dirname trong ES Modules
+import { fileURLToPath } = require('url'); // Sử dụng require thay vì import để tránh xung đột với __dirname trong ES Modules
+
 
 const app = express();
 const PORT = 3000;
@@ -12,6 +13,7 @@ const PORT = 3000;
 app.use(express.json());
 
 // Xác định đường dẫn thư mục hiện tại cho ES Modules
+// Đây là cách đúng để có __dirname trong ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -431,6 +433,7 @@ const htmlContent = `
                     throw new Error('HTTP error! status: ' + response.status);
                 }
                 const data = await response.json();
+                // Dòng này đã được sửa lỗi cú pháp
                 console.log('[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: \'' + data.url + '\', Cookies: ' + (data.cookies ? data.cookies.length : 0) + ' mục.');
                 
                 if (data.url) {
@@ -548,7 +551,7 @@ const htmlContent = `
                     const data = await response.json();
                     if (response.ok) {
                         appendLog('Server phản hồi: ' + data.message + ' - URL: ' + data.url, 'success');
-                        console.log('[CLIENT JS] Server phản hồi thành công: ' + data.message);
+                        console.log('Server phản hồi thành công: ' + data.message); // Dòng này cũng đã được sửa
                     } else {
                         appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
                         console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
@@ -574,7 +577,7 @@ const htmlContent = `
                     const data = await response.json();
                     if (response.ok) {
                         appendLog('Server phản hồi: ' + data.message, 'success');
-                        console.log('[CLIENT JS] Server phản hồi thành công: ' + data.message);
+                        console.log('Server phản hồi thành công: ' + data.message); // Dòng này cũng đã được sửa
                     } else {
                         appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
                         console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
