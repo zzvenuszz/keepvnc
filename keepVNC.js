@@ -296,18 +296,20 @@ const htmlContent = `
             // Hàm để thêm log vào khu vực hiển thị
             function appendLog(message, type = 'info') {
                 const span = document.createElement('span');
-                span.classList.add(type); // Thêm class để CSS có thể định dạng màu
-                span.textContent = `[${new Date().toLocaleTimeString()}] ${message}\n`;
+                span.classList.add(type);
+                // Đã sửa: Escape dấu backtick và đô la
+                span.textContent = \`[\<span class="math-inline">\{new Date\(\)\.toLocaleTimeString\(\)\}\] \\</span>{message}\\n\`;
                 logArea.appendChild(span);
-                logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
+                logArea.scrollTop = logArea.scrollHeight;
             }
 
             // Thiết lập kết nối WebSocket
             function connectWebSocket() {
                 if (ws && ws.readyState === ws.OPEN) {
-                    return; // Đã kết nối
+                    return;
                 }
-                ws = new WebSocket('ws://' + window.location.host + '/ws'); // Sử dụng host hiện tại
+                // Đã sửa: Escape dấu backtick
+                ws = new WebSocket(\`ws://\${window.location.host}/ws\`);
 
                 ws.onopen = () => {
                     appendLog('Đã kết nối với Server WebSocket.', 'info');
@@ -318,25 +320,26 @@ const htmlContent = `
                         const logData = JSON.parse(event.data);
                         appendLog(logData.message, logData.type);
                     } catch (e) {
+                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Received raw WS message: \${event.data}\`, 'info');
                     }
                 };
 
                 ws.onclose = (event) => {
-                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \${event.code}, Lý do: \${event.reason}\`, 'warning');
-                    // Thử kết nối lại sau một khoảng thời gian
+                    // Đã sửa: Escape dấu backtick và đô la
+                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \<span class="math-inline">\{event\.code\}, Lý do\: \\</span>{event.reason}\`, 'warning');
                     setTimeout(connectWebSocket, 3000);
                 };
 
                 ws.onerror = (error) => {
+                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi WebSocket: \${error.message}\`, 'error');
                     ws.close();
                 };
             }
 
-            connectWebSocket(); // Kết nối WebSocket ngay khi tải trang
+            connectWebSocket();
 
-            // Sự kiện khi nhấn nút Bắt đầu
             startButton.addEventListener('click', async () => {
                 const url = urlInput.value.trim();
                 let cookies = [];
@@ -344,6 +347,8 @@ const htmlContent = `
                 try {
                     const cookieText = cookieInput.value.trim();
                     if (cookieText) {
+                        // Sửa lỗi: Đây là kiểm tra cơ bản cho trường hợp dán cookie không phải JSON
+                        // Nếu bạn chắc chắn người dùng sẽ chỉ dán JSON array, có thể bỏ dòng này
                         if (cookieText.includes('=')) {
                             appendLog('Bạn có vẻ đã dán chuỗi cookie trực tiếp. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
                             return;
@@ -356,6 +361,7 @@ const htmlContent = `
                         appendLog('Cảnh báo: Không có cookie nào được nhập. Trang web có thể không duy trì trạng thái đăng nhập.', 'warning');
                     }
                 } catch (error) {
+                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi parse cookie: \${error.message}\`, 'error');
                     return;
                 }
@@ -372,7 +378,7 @@ const htmlContent = `
                 appendLog('Đang gửi yêu cầu bắt đầu reload...', 'info');
 
                 try {
-                    const response = await fetch('/start-reload', { // Gửi đến API endpoint trên cùng server
+                    const response = await fetch('/start-reload', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -382,20 +388,22 @@ const htmlContent = `
 
                     const data = await response.json();
                     if (response.ok) {
-                        appendLog(\`Server phản hồi: \${data.message} - URL: \${data.url}\`, 'success');
+                        // Đã sửa: Escape dấu backtick và đô la
+                        appendLog(\`Server phản hồi: \<span class="math-inline">\{data\.message\} \- URL\: \\</span>{data.url}\`, 'success');
                     } else {
+                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
                     }
                 } catch (error) {
+                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi kết nối đến server: \${error.message}. Đảm bảo server Node.js đang chạy.\`, 'error');
                 }
             });
 
-            // Sự kiện khi nhấn nút Tạm dừng
             stopButton.addEventListener('click', async () => {
                 appendLog('Đang gửi yêu cầu tạm dừng reload...', 'info');
                 try {
-                    const response = await fetch('/stop-reload', { // Gửi đến API endpoint trên cùng server
+                    const response = await fetch('/stop-reload', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -404,11 +412,14 @@ const htmlContent = `
 
                     const data = await response.json();
                     if (response.ok) {
+                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Server phản hồi: \${data.message}\`, 'success');
                     } else {
+                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
                     }
                 } catch (error) {
+                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi kết nối đến server: \${error.message}\`, 'error');
                 }
             });
