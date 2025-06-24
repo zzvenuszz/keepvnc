@@ -1,17 +1,24 @@
 {
-  "name": "vnc-keepalive",
+  "name": "single-file-cookie-reloader",
   "version": "1.0.0",
-  "description": "Fake VNC client + Web interface to keep VNC session alive",
-  "main": "keepVNC.js",
+  "description": "A web reloader with cookies in a single Node.js file.",
+  "main": "app.js",
+  "type": "module",
   "scripts": {
-    "start": "node keepVNC.js"
+    "start": "node app.js"
   },
-  "engines": {
-    "node": "18.x"
-  },
+  "keywords": [
+    "nodejs",
+    "cookie",
+    "reload",
+    "scraper",
+    "web"
+  ],
+  "author": "Bui Huy Hoan",
+  "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
-    "rfb2": "^0.2.2",
-    "express-basic-auth": "^1.2.0"
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2",
+    "ws": "^8.18.0"
   }
 }
