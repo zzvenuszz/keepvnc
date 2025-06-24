@@ -2,10 +2,10 @@
   "name": "single-file-cookie-reloader",
   "version": "1.0.0",
   "description": "A web reloader with cookies in a single Node.js file.",
-  "main": "app.js",
+  "main": "keepVNC.js",  <-- Đã cập nhật ở đây
   "type": "module",
   "scripts": {
-    "start": "node app.js"
+    "start": "node keepVNC.js" <-- Và ở đây (tùy chọn, để nhất quán)
   },
   "keywords": [
     "nodejs",
