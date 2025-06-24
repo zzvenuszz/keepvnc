@@ -1,7 +1,17 @@
 {
-  "name":"keep-vnc",
-  "version":"1.0.0",
-  "main":"keepVNC.js",
-  "scripts":{"start":"node keepVNC.js"},
-  "dependencies":{"express":"^4.18","body-parser":"^1.20","axios":"^1.6"}
+  "name": "keep-vnc",
+  "version": "1.0.0",
+  "description": "Ứng dụng Node.js sử dụng Access Token để truy cập Google Cloud Workstations",
+  "main": "keepVNC.js",
+  "scripts": {
+    "start": "node keepVNC.js"
+  },
+  "author": "Hoàn",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "axios": "^1.6.0",
+    "google-auth-library": "^10.1.0"
+  }
 }
