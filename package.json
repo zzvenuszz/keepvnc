@@ -1,17 +1,17 @@
 {
-  "name": "keep-vnc",
+  "name": "vnc-keepalive",
   "version": "1.0.0",
-  "description": "Node.js app dùng Access Token để truy cập Google Cloud Workstations",
+  "description": "Fake VNC client + Web interface to keep VNC session alive",
   "main": "keepVNC.js",
   "scripts": {
     "start": "node keepVNC.js"
   },
-  "author": "Hoàn",
-  "license": "MIT",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
     "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "axios": "^1.6.0",
-    "google-auth-library": "^10.1.0"
+    "rfb2": "^0.2.2",
+    "express-basic-auth": "^1.2.0"
   }
 }
