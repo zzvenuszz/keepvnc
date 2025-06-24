@@ -1,6 +1,9 @@
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import fetch from 'node-fetch';
+import fs from 'fs/promises'; // Import fs/promises để dùng async/await với file system
+import path from 'path'; // Để xử lý đường dẫn file
+import { fileURLToPath } from 'url'; // Để lấy __dirname trong ES Modules
 
 const app = express();
 const PORT = 3000;
@@ -8,9 +11,50 @@ const PORT = 3000;
 // Sử dụng middleware để parse JSON body trong request
 app.use(express.json());
 
+// Xác định đường dẫn thư mục hiện tại cho ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Đường dẫn đến file lưu trữ dữ liệu
+const DATA_FILE = path.join(__dirname, 'reloader_data.json');
+
 let reloadIntervalId = null; // Biến để lưu ID của interval
 let currentTargetUrl = '';
 let currentCookies = [];
+
+// Hàm khởi tạo: đọc dữ liệu đã lưu từ file khi server khởi động
+async function loadSavedData() {
+    try {
+        const data = await fs.readFile(DATA_FILE, 'utf8');
+        const parsedData = JSON.parse(data);
+        currentTargetUrl = parsedData.url || '';
+        currentCookies = parsedData.cookies || [];
+        sendLogToClients('Đã tải dữ liệu cấu hình từ server.', 'info');
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            // File không tồn tại, tạo file rỗng hoặc bỏ qua
+            sendLogToClients('File dữ liệu cấu hình chưa tồn tại. Sẽ tạo mới khi lưu.', 'warning');
+            await saveCurrentData(); // Lưu dữ liệu rỗng ban đầu nếu file không tồn tại
+        } else {
+            sendLogToClients(`Lỗi khi tải dữ liệu cấu hình: ${error.message}`, 'error');
+        }
+    }
+}
+
+// Hàm lưu dữ liệu hiện tại vào file
+async function saveCurrentData() {
+    const dataToSave = {
+        url: currentTargetUrl,
+        cookies: currentCookies
+    };
+    try {
+        await fs.writeFile(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+        sendLogToClients('Đã lưu dữ liệu cấu hình vào server.', 'info');
+    } catch (error) {
+        sendLogToClients(`Lỗi khi lưu dữ liệu cấu hình: ${error.message}`, 'error');
+    }
+}
+
 
 // Khởi tạo WebSocket Server (sẽ gắn vào server HTTP sau)
 const wss = new WebSocketServer({ noServer: true });
@@ -27,6 +71,8 @@ function sendLogToClients(message, type = 'info') {
             client.send(JSON.stringify(formattedMessage));
         }
     });
+    // Ghi log ra console của Node.js server
+    console.log(`[${formattedMessage.timestamp}] [${type.toUpperCase()}] ${message}`);
 }
 
 // Hàm chuyển đổi JSON cookie sang chuỗi định dạng header
@@ -43,7 +89,8 @@ function convertCookiesJsonToString(cookiesJson) {
 // Hàm thực hiện việc reload trang
 async function performReload() {
     if (!currentTargetUrl || currentCookies.length === 0) {
-        sendLogToClients('Chưa có URL hoặc cookie để reload. Vui lòng cấu hình.', 'warning');
+        // Không gửi log liên tục nếu chưa có cấu hình để tránh spam
+        // sendLogToClients('Chưa có URL hoặc cookie để reload. Vui lòng cấu hình.', 'warning');
         return;
     }
 
@@ -84,7 +131,16 @@ async function performReload() {
 }
 
 // --- API Endpoints ---
-app.post('/start-reload', (req, res) => {
+
+// API để tải dữ liệu đã lưu trữ từ server
+app.get('/load-data', (req, res) => {
+    res.json({
+        url: currentTargetUrl,
+        cookies: currentCookies
+    });
+});
+
+app.post('/start-reload', async (req, res) => { // Thêm async ở đây
     const { url, cookies } = req.body;
 
     if (!url || !cookies || !Array.isArray(cookies)) {
@@ -93,6 +149,8 @@ app.post('/start-reload', (req, res) => {
 
     currentTargetUrl = url;
     currentCookies = cookies;
+
+    await saveCurrentData(); // Lưu dữ liệu vào file ngay sau khi cập nhật
 
     if (reloadIntervalId) {
         clearInterval(reloadIntervalId); // Dừng nếu đang chạy
@@ -284,7 +342,7 @@ const htmlContent = `
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => { // Thêm async ở đây
             const urlInput = document.getElementById('urlInput');
             const cookieInput = document.getElementById('cookieInput');
             const startButton = document.getElementById('startButton');
@@ -297,18 +355,33 @@ const htmlContent = `
             function appendLog(message, type = 'info') {
                 const span = document.createElement('span');
                 span.classList.add(type);
-                // Đã sửa: Escape dấu backtick và đô la
-                span.textContent = \`[\<span class="math-inline">\{new Date\(\)\.toLocaleTimeString\(\)\}\] \\</span>{message}\\n\`;
+                span.textContent = \`[\${new Date().toLocaleTimeString()}] \${message}\\n\`;
                 logArea.appendChild(span);
-                logArea.scrollTop = logArea.scrollHeight;
+                logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
+                console.log(\`[Log Web] [\${type.toUpperCase()}] \${message}\`); // Ghi log ra console trình duyệt
             }
+
+            // Tải dữ liệu đã lưu từ server khi trang load
+            try {
+                const response = await fetch('/load-data');
+                const data = await response.json();
+                if (data.url) {
+                    urlInput.value = data.url;
+                }
+                if (data.cookies && data.cookies.length > 0) {
+                    cookieInput.value = JSON.stringify(data.cookies, null, 2); // Định dạng lại JSON cho dễ đọc
+                }
+                appendLog('Đã tải dữ liệu cấu hình từ server.', 'info');
+            } catch (error) {
+                appendLog(\`Lỗi khi tải dữ liệu cấu hình từ server: \${error.message}\`, 'error');
+            }
+
 
             // Thiết lập kết nối WebSocket
             function connectWebSocket() {
                 if (ws && ws.readyState === ws.OPEN) {
                     return;
                 }
-                // Đã sửa: Escape dấu backtick
                 ws = new WebSocket(\`ws://\${window.location.host}/ws\`);
 
                 ws.onopen = () => {
@@ -320,25 +393,23 @@ const htmlContent = `
                         const logData = JSON.parse(event.data);
                         appendLog(logData.message, logData.type);
                     } catch (e) {
-                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Received raw WS message: \${event.data}\`, 'info');
                     }
                 };
 
                 ws.onclose = (event) => {
-                    // Đã sửa: Escape dấu backtick và đô la
-                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \<span class="math-inline">\{event\.code\}, Lý do\: \\</span>{event.reason}\`, 'warning');
+                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \${event.code}, Lý do: \${event.reason}\`, 'warning');
+                    // Thử kết nối lại sau một khoảng thời gian
                     setTimeout(connectWebSocket, 3000);
                 };
 
                 ws.onerror = (error) => {
-                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi WebSocket: \${error.message}\`, 'error');
                     ws.close();
                 };
             }
 
-            connectWebSocket();
+            connectWebSocket(); // Kết nối WebSocket ngay khi tải trang
 
             startButton.addEventListener('click', async () => {
                 const url = urlInput.value.trim();
@@ -347,8 +418,6 @@ const htmlContent = `
                 try {
                     const cookieText = cookieInput.value.trim();
                     if (cookieText) {
-                        // Sửa lỗi: Đây là kiểm tra cơ bản cho trường hợp dán cookie không phải JSON
-                        // Nếu bạn chắc chắn người dùng sẽ chỉ dán JSON array, có thể bỏ dòng này
                         if (cookieText.includes('=')) {
                             appendLog('Bạn có vẻ đã dán chuỗi cookie trực tiếp. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
                             return;
@@ -361,7 +430,6 @@ const htmlContent = `
                         appendLog('Cảnh báo: Không có cookie nào được nhập. Trang web có thể không duy trì trạng thái đăng nhập.', 'warning');
                     }
                 } catch (error) {
-                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi parse cookie: \${error.message}\`, 'error');
                     return;
                 }
@@ -374,6 +442,11 @@ const htmlContent = `
                     appendLog('Địa chỉ URL phải bắt đầu bằng http:// hoặc https://', 'error');
                     return;
                 }
+
+                // Dữ liệu được gửi thẳng lên server và lưu ở đó
+                // Không cần localStorage nữa
+                // localStorage.setItem('reloaderUrl', url);
+                // localStorage.setItem('reloaderCookies', cookieInput.value.trim());
 
                 appendLog('Đang gửi yêu cầu bắt đầu reload...', 'info');
 
@@ -388,14 +461,11 @@ const htmlContent = `
 
                     const data = await response.json();
                     if (response.ok) {
-                        // Đã sửa: Escape dấu backtick và đô la
-                        appendLog(\`Server phản hồi: \<span class="math-inline">\{data\.message\} \- URL\: \\</span>{data.url}\`, 'success');
+                        appendLog(\`Server phản hồi: \${data.message} - URL: \${data.url}\`, 'success');
                     } else {
-                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
                     }
                 } catch (error) {
-                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi kết nối đến server: \${error.message}. Đảm bảo server Node.js đang chạy.\`, 'error');
                 }
             });
@@ -412,14 +482,11 @@ const htmlContent = `
 
                     const data = await response.json();
                     if (response.ok) {
-                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Server phản hồi: \${data.message}\`, 'success');
                     } else {
-                        // Đã sửa: Escape dấu backtick và đô la
                         appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
                     }
                 } catch (error) {
-                    // Đã sửa: Escape dấu backtick và đô la
                     appendLog(\`Lỗi kết nối đến server: \${error.message}\`, 'error');
                 }
             });
@@ -435,8 +502,9 @@ app.get('/', (req, res) => {
 });
 
 // Lắng nghe cổng HTTP
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => { // Thêm async ở đây
     console.log(`Server đang chạy tại http://localhost:${PORT}`);
+    await loadSavedData(); // Tải dữ liệu khi server khởi động
 });
 
 // Nâng cấp kết nối HTTP lên WebSocket khi có yêu cầu
