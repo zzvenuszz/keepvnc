@@ -1,166 +1,447 @@
-const net = require('net');
-const express = require('express');
-const rfb = require('rfb2');
+import express from 'express';
+import { WebSocketServer } from 'ws';
+import fetch from 'node-fetch';
+
 const app = express();
+const PORT = 3000;
 
-let HOST = '0.tcp.jp.ngrok.io';
-let PORT = 11151;
-let PASSWORD = '';
+// Sử dụng middleware để parse JSON body trong request
+app.use(express.json());
 
-let lastPing = 'Chưa ping';
-let visitCount = 0;
-let lastVisitTime = 'Chưa có truy cập';
-let vncClient = null;
-let keepAliveInterval = null;
+let reloadIntervalId = null; // Biến để lưu ID của interval
+let currentTargetUrl = '';
+let currentCookies = [];
 
-const INTERVAL = 30000;
+// Khởi tạo WebSocket Server (sẽ gắn vào server HTTP sau)
+const wss = new WebSocketServer({ noServer: true });
 
-app.use(express.urlencoded({ extended: true }));
-
-function now() {
-  return new Date().toLocaleString('vi-VN', { hour12: false });
+// Hàm gửi log tới tất cả các client WebSocket đang kết nối
+function sendLogToClients(message, type = 'info') {
+    const formattedMessage = {
+        timestamp: new Date().toLocaleTimeString(),
+        message: message,
+        type: type
+    };
+    wss.clients.forEach(client => {
+        if (client.readyState === client.OPEN) {
+            client.send(JSON.stringify(formattedMessage));
+        }
+    });
 }
 
-function keepAlivePing() {
-  const socket = new net.Socket();
-  socket.setTimeout(10000);
-
-  socket.connect(PORT, HOST, () => {
-    lastPing = now();
-    console.log(`[${lastPing}] ✅ Ping VNC thành công: ${HOST}:${PORT}`);
-    socket.destroy();
-  });
-
-  socket.on('error', (err) => {
-    console.error(`[${now()}] ❌ Lỗi kết nối TCP: ${err.message}`);
-  });
-
-  socket.on('timeout', () => {
-    console.warn(`[${now()}] ⏰ Timeout TCP`);
-    socket.destroy();
-  });
+// Hàm chuyển đổi JSON cookie sang chuỗi định dạng header
+function convertCookiesJsonToString(cookiesJson) {
+    if (!Array.isArray(cookiesJson)) {
+        return '';
+    }
+    return cookiesJson
+        .filter(cookie => cookie.name && cookie.value)
+        .map(cookie => `${cookie.name}=${cookie.value}`)
+        .join('; ');
 }
 
-function connectVNCClient() {
-  if (vncClient) {
+// Hàm thực hiện việc reload trang
+async function performReload() {
+    if (!currentTargetUrl || currentCookies.length === 0) {
+        sendLogToClients('Chưa có URL hoặc cookie để reload. Vui lòng cấu hình.', 'warning');
+        return;
+    }
+
+    const cookiesString = convertCookiesJsonToString(currentCookies);
+    sendLogToClients(`Đang tải lại: ${currentTargetUrl}`, 'info');
+
     try {
-      vncClient.end();
-      vncClient = null;
-      clearInterval(keepAliveInterval);
-    } catch (e) {}
-  }
+        const response = await fetch(currentTargetUrl, {
+            method: 'GET',
+            headers: {
+                'Cookie': cookiesString,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+            }
+        });
 
-  console.log(`[${now()}] 🕹️ Đang kết nối VNC: ${HOST}:${PORT}`);
+        if (response.ok) {
+            const text = await response.text();
+            const logMessage = `SUCCESS: ${currentTargetUrl} - Status: ${response.status}`;
+            sendLogToClients(logMessage, 'success');
 
-  vncClient = rfb.createConnection({
-    host: HOST,
-    port: PORT,
-    password: PASSWORD,
-    shared: true
-  });
+            // Kiểm tra dấu hiệu đăng nhập đơn giản (ví dụ với Google)
+            if (currentTargetUrl.includes('google.com') && text.includes('Sign in') && !text.includes('Sign out')) {
+                 sendLogToClients('Có vẻ như phiên đăng nhập đã hết hạn hoặc không hoạt động.', 'warning');
+            } else {
+                 sendLogToClients('Trạng thái đăng nhập có vẻ được duy trì.', 'info');
+            }
 
-  vncClient.on('connect', () => {
-    console.log(`[${now()}] ✅ Fake client VNC đã kết nối`);
-
-    const KEEP_ALIVE_KEYS = [0xFFE5, 0xFFE1, 0xFF09, 0xFF1B, 0x20]; // CapsLock, Shift, Tab, Esc, Space
-    let keyIndex = 0;
-
-    keepAliveInterval = setInterval(() => {
-      const key = KEEP_ALIVE_KEYS[keyIndex % KEEP_ALIVE_KEYS.length];
-      keyIndex++;
-
-      try {
-        vncClient.keyEvent(key, 1); // nhấn
-        vncClient.keyEvent(key, 0); // thả
-        console.log(`[${now()}] ⌨️ Gửi giữ kết nối với phím mã: 0x${key.toString(16).toUpperCase()}`);
-      } catch (e) {
-        console.log(`[${now()}] ⚠️ Lỗi gửi phím giữ kết nối: ${e.message}`);
-      }
-    }, 10000);
-  });
-
-  vncClient.on('error', (err) => {
-    console.error(`[${now()}] ❌ VNC lỗi: ${err.message}`);
-  });
-
-  vncClient.on('close', () => {
-    console.warn(`[${now()}] 🔌 VNC đóng kết nối`);
-    clearInterval(keepAliveInterval);
-    setTimeout(connectVNCClient, 5000);
-  });
+        } else {
+            const logMessage = `FAILED: ${currentTargetUrl} - Status: ${response.status} ${response.statusText}`;
+            sendLogToClients(logMessage, 'error');
+        }
+    } catch (error) {
+        const logMessage = `ERROR: ${currentTargetUrl} - ${error.message}`;
+        sendLogToClients(logMessage, 'error');
+    }
 }
 
+// --- API Endpoints ---
+app.post('/start-reload', (req, res) => {
+    const { url, cookies } = req.body;
+
+    if (!url || !cookies || !Array.isArray(cookies)) {
+        return res.status(400).json({ message: 'URL và Cookie (dạng mảng JSON) không được trống.' });
+    }
+
+    currentTargetUrl = url;
+    currentCookies = cookies;
+
+    if (reloadIntervalId) {
+        clearInterval(reloadIntervalId); // Dừng nếu đang chạy
+    }
+
+    performReload(); // Chạy lần đầu tiên ngay lập tức
+
+    // Thiết lập interval để chạy lại mỗi 5 giây
+    reloadIntervalId = setInterval(performReload, 5000); // 5 giây
+
+    res.json({ message: 'Bắt đầu reload trang định kỳ.', url: currentTargetUrl });
+});
+
+app.post('/stop-reload', (req, res) => {
+    if (reloadIntervalId) {
+        clearInterval(reloadIntervalId);
+        reloadIntervalId = null;
+        sendLogToClients('Đã tạm dừng reload trang.', 'info');
+        res.json({ message: 'Đã tạm dừng reload trang.' });
+    } else {
+        res.json({ message: 'Reload chưa được chạy.' });
+    }
+});
+
+// --- Frontend HTML, CSS, JavaScript được nhúng trực tiếp ---
+
+const htmlContent = `
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Reloader với Cookie</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 700px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #0056b3;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 2em;
+        }
+
+        h2 {
+            color: #0056b3;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .input-group input[type="url"],
+        .input-group textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #cce0ff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1em;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .input-group input[type="url"]:focus,
+        .input-group textarea:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+            outline: none;
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            min-height: 120px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+            margin-bottom: 40px;
+        }
+
+        .buttons button {
+            padding: 12px 30px;
+            font-size: 1.1em;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: bold;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        #startButton {
+            background-color: #28a745;
+        }
+
+        #startButton:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+        }
+
+        #stopButton {
+            background-color: #dc3545;
+        }
+
+        #stopButton:hover {
+            background-color: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .log-output #logArea {
+            background-color: #f8fafd;
+            border: 1px solid #e0e7ee;
+            padding: 15px;
+            min-height: 250px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.95em;
+            line-height: 1.5;
+            color: #4a4a4a;
+        }
+
+        .log-output #logArea span.info { color: #4a4a4a; }
+        .log-output #logArea span.success { color: #28a745; }
+        .log-output #logArea span.error { color: #dc3545; }
+        .log-output #logArea span.warning { color: #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Web Reloader với Cookie</h1>
+
+        <div class="input-group">
+            <label for="urlInput">Địa chỉ trang web:</label>
+            <input type="url" id="urlInput" placeholder="https://example.com" value="https://www.google.com">
+        </div>
+
+        <div class="input-group">
+            <label for="cookieInput">Cookie (dạng JSON Array từ Cookie Editor):</label>
+            <textarea id="cookieInput" rows="10"
+            placeholder='[{"domain": ".example.com", "name": "session", "value": "xyz"}, {"name": "csrf", "value": "abc"}]'></textarea>
+        </div>
+
+        <div class="buttons">
+            <button id="startButton">Bắt đầu Reload</button>
+            <button id="stopButton">Tạm dừng</button>
+        </div>
+
+        <div class="log-output">
+            <h2>Log kết quả:</h2>
+            <pre id="logArea"></pre>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlInput = document.getElementById('urlInput');
+            const cookieInput = document.getElementById('cookieInput');
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const logArea = document.getElementById('logArea');
+
+            let ws; // Biến để lưu trữ kết nối WebSocket
+
+            // Hàm để thêm log vào khu vực hiển thị
+            function appendLog(message, type = 'info') {
+                const span = document.createElement('span');
+                span.classList.add(type); // Thêm class để CSS có thể định dạng màu
+                span.textContent = `[${new Date().toLocaleTimeString()}] ${message}\n`;
+                logArea.appendChild(span);
+                logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
+            }
+
+            // Thiết lập kết nối WebSocket
+            function connectWebSocket() {
+                if (ws && ws.readyState === ws.OPEN) {
+                    return; // Đã kết nối
+                }
+                ws = new WebSocket('ws://' + window.location.host + '/ws'); // Sử dụng host hiện tại
+
+                ws.onopen = () => {
+                    appendLog('Đã kết nối với Server WebSocket.', 'info');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const logData = JSON.parse(event.data);
+                        appendLog(logData.message, logData.type);
+                    } catch (e) {
+                        appendLog(\`Received raw WS message: \${event.data}\`, 'info');
+                    }
+                };
+
+                ws.onclose = (event) => {
+                    appendLog(\`Kết nối WebSocket đã đóng. Mã: \${event.code}, Lý do: \${event.reason}\`, 'warning');
+                    // Thử kết nối lại sau một khoảng thời gian
+                    setTimeout(connectWebSocket, 3000);
+                };
+
+                ws.onerror = (error) => {
+                    appendLog(\`Lỗi WebSocket: \${error.message}\`, 'error');
+                    ws.close();
+                };
+            }
+
+            connectWebSocket(); // Kết nối WebSocket ngay khi tải trang
+
+            // Sự kiện khi nhấn nút Bắt đầu
+            startButton.addEventListener('click', async () => {
+                const url = urlInput.value.trim();
+                let cookies = [];
+
+                try {
+                    const cookieText = cookieInput.value.trim();
+                    if (cookieText) {
+                        if (cookieText.includes('=')) {
+                            appendLog('Bạn có vẻ đã dán chuỗi cookie trực tiếp. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
+                            return;
+                        }
+                        cookies = JSON.parse(cookieText);
+                        if (!Array.isArray(cookies) || cookies.some(c => typeof c !== 'object' || !c.name || !c.value)) {
+                            throw new Error('Định dạng cookie JSON không hợp lệ. Phải là một mảng các đối tượng có thuộc tính "name" và "value".');
+                        }
+                    } else {
+                        appendLog('Cảnh báo: Không có cookie nào được nhập. Trang web có thể không duy trì trạng thái đăng nhập.', 'warning');
+                    }
+                } catch (error) {
+                    appendLog(\`Lỗi parse cookie: \${error.message}\`, 'error');
+                    return;
+                }
+
+                if (!url) {
+                    appendLog('Vui lòng nhập địa chỉ trang web.', 'error');
+                    return;
+                }
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    appendLog('Địa chỉ URL phải bắt đầu bằng http:// hoặc https://', 'error');
+                    return;
+                }
+
+                appendLog('Đang gửi yêu cầu bắt đầu reload...', 'info');
+
+                try {
+                    const response = await fetch('/start-reload', { // Gửi đến API endpoint trên cùng server
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ url, cookies }),
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        appendLog(\`Server phản hồi: \${data.message} - URL: \${data.url}\`, 'success');
+                    } else {
+                        appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
+                    }
+                } catch (error) {
+                    appendLog(\`Lỗi kết nối đến server: \${error.message}. Đảm bảo server Node.js đang chạy.\`, 'error');
+                }
+            });
+
+            // Sự kiện khi nhấn nút Tạm dừng
+            stopButton.addEventListener('click', async () => {
+                appendLog('Đang gửi yêu cầu tạm dừng reload...', 'info');
+                try {
+                    const response = await fetch('/stop-reload', { // Gửi đến API endpoint trên cùng server
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        appendLog(\`Server phản hồi: \${data.message}\`, 'success');
+                    } else {
+                        appendLog(\`Lỗi từ server: \${data.message || 'Không rõ lỗi'}\`, 'error');
+                    }
+                } catch (error) {
+                    appendLog(\`Lỗi kết nối đến server: \${error.message}\`, 'error');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+`;
+
+// Middleware để phục vụ HTML content trực tiếp từ Express
 app.get('/', (req, res) => {
-  visitCount++;
-  lastVisitTime = now();
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-
-  console.log(`📥 Truy cập #${visitCount} lúc ${lastVisitTime} từ IP: ${ip}`);
-
-  res.send(`
-    <html>
-    <head>
-      <title>VNC Keep Alive</title>
-      <style>
-        body { font-family: Arial; background: #f5f5f5; padding: 20px; max-width: 600px; margin: auto; }
-        h1 { color: #2b9348; }
-        input, button { width: 100%; padding: 10px; margin: 5px 0; }
-        button { background: #2b9348; color: white; border: none; cursor: pointer; }
-        button:hover { background: #238636; }
-      </style>
-    </head>
-    <body>
-      <h1>✅ VNC is alive!</h1>
-      <p>🔗 <strong>Địa chỉ đang kết nối:</strong> ${HOST}:${PORT}</p>
-      <p>📡 <strong>Ping gần nhất:</strong> ${lastPing}</p>
-      <p>🔁 <strong>Số lượt truy cập:</strong> ${visitCount}</p>
-      <p>🕒 <strong>Truy cập gần nhất:</strong> ${lastVisitTime}</p>
-      <hr>
-      <h3>🔧 Cập nhật địa chỉ VNC</h3>
-      <form method="POST" action="/update">
-        <input type="text" name="vnc_address" value="${HOST}:${PORT}" required placeholder="ip:port">
-        <input type="text" name="vnc_password" value="${PASSWORD}" placeholder="Mật khẩu (nếu có)">
-        <button type="submit">Cập nhật</button>
-      </form>
-    </body>
-    </html>
-  `);
+    res.send(htmlContent);
 });
 
-app.post('/update', (req, res) => {
-  const { vnc_address, vnc_password } = req.body;
-
-  if (!vnc_address.includes(':')) {
-    return res.send('❌ Địa chỉ không hợp lệ. Định dạng: ip:port');
-  }
-
-  const [host, port] = vnc_address.split(':');
-  if (!host || isNaN(Number(port))) {
-    return res.send('❌ Địa chỉ hoặc cổng không hợp lệ.');
-  }
-
-  HOST = host.trim();
-  PORT = Number(port.trim());
-  PASSWORD = vnc_password?.trim() || '';
-  console.log(`[${now()}] 🔄 Đã cập nhật VNC: ${HOST}:${PORT}`);
-
-  connectVNCClient();
-  res.redirect('/');
+// Lắng nghe cổng HTTP
+const server = app.listen(PORT, () => {
+    console.log(`Server đang chạy tại http://localhost:${PORT}`);
 });
 
-app.get('/ping', (req, res) => {
-  const time = now();
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-  console.log(`📶 [${time}] Ping nhận từ ${ip}`);
-  res.send(`OK: ${lastPing}`);
+// Nâng cấp kết nối HTTP lên WebSocket khi có yêu cầu
+server.on('upgrade', (request, socket, head) => {
+    if (request.url === '/ws') {
+        wss.handleUpgrade(request, socket, head, ws => {
+            wss.emit('connection', ws, request);
+        });
+    } else {
+        socket.destroy();
+    }
 });
 
-const WEB_PORT = process.env.PORT || 3000;
-app.listen(WEB_PORT, () => {
-  console.log(`🌐 Web UI chạy tại http://localhost:${WEB_PORT}`);
+// Xử lý kết nối WebSocket
+wss.on('connection', ws => {
+    console.log('Client WebSocket đã kết nối.');
+    ws.on('close', () => console.log('Client WebSocket đã ngắt kết nối.'));
+    ws.on('error', error => console.error('Lỗi WebSocket:', error));
 });
-
-// Khởi động
-connectVNCClient();
-keepAlivePing();
-setInterval(keepAlivePing, INTERVAL);
