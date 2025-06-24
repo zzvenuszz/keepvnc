@@ -30,9 +30,17 @@ async function loadSavedData() {
         currentTargetUrl = parsedData.url || '';
         currentCookies = parsedData.cookies || [];
         sendLogToClients('Đã tải dữ liệu cấu hình từ server.', 'info');
+
+        // *** THAY ĐỔI QUAN TRỌNG: Tự động bắt đầu reload nếu có dữ liệu ***
+        if (currentTargetUrl && currentCookies.length > 0) {
+            startReloadProcess(currentTargetUrl, currentCookies); // Hàm mới để bắt đầu reload
+            sendLogToClients('Đã tự động bắt đầu quá trình reload dựa trên dữ liệu đã lưu.', 'info');
+        } else {
+            sendLogToClients('Không có dữ liệu cấu hình được lưu hoặc dữ liệu không đầy đủ. Sẽ không tự động reload.', 'warning');
+        }
+
     } catch (error) {
         if (error.code === 'ENOENT') {
-            // File không tồn tại, tạo file rỗng hoặc bỏ qua
             sendLogToClients('File dữ liệu cấu hình chưa tồn tại. Sẽ tạo mới khi lưu.', 'warning');
             await saveCurrentData(); // Lưu dữ liệu rỗng ban đầu nếu file không tồn tại
         } else {
@@ -62,7 +70,7 @@ const wss = new WebSocketServer({ noServer: true });
 // Hàm gửi log tới tất cả các client WebSocket đang kết nối
 function sendLogToClients(message, type = 'info') {
     const formattedMessage = {
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour12: false }), // Định dạng 24h
         message: message,
         type: type
     };
@@ -72,7 +80,7 @@ function sendLogToClients(message, type = 'info') {
         }
     });
     // Ghi log ra console của Node.js server
-    console.log(`[${formattedMessage.timestamp}] [${type.toUpperCase()}] ${message}`);
+    console.log(`[${formattedMessage.timestamp}] [${formattedMessage.type.toUpperCase()}] ${formattedMessage.message}`);
 }
 
 // Hàm chuyển đổi JSON cookie sang chuỗi định dạng header
@@ -130,6 +138,22 @@ async function performReload() {
     }
 }
 
+// Hàm tách riêng logic bắt đầu reload để có thể gọi từ nhiều nơi
+function startReloadProcess(url, cookies) {
+    currentTargetUrl = url;
+    currentCookies = cookies;
+
+    if (reloadIntervalId) {
+        clearInterval(reloadIntervalId); // Dừng nếu đang chạy
+    }
+
+    performReload(); // Chạy lần đầu tiên ngay lập tức
+
+    // Thiết lập interval để chạy lại mỗi 5 giây
+    reloadIntervalId = setInterval(performReload, 5000); // 5 giây
+}
+
+
 // --- API Endpoints ---
 
 // API để tải dữ liệu đã lưu trữ từ server
@@ -147,19 +171,9 @@ app.post('/start-reload', async (req, res) => { // Thêm async ở đây
         return res.status(400).json({ message: 'URL và Cookie (dạng mảng JSON) không được trống.' });
     }
 
-    currentTargetUrl = url;
-    currentCookies = cookies;
+    startReloadProcess(url, cookies); // Gọi hàm bắt đầu reload
 
     await saveCurrentData(); // Lưu dữ liệu vào file ngay sau khi cập nhật
-
-    if (reloadIntervalId) {
-        clearInterval(reloadIntervalId); // Dừng nếu đang chạy
-    }
-
-    performReload(); // Chạy lần đầu tiên ngay lập tức
-
-    // Thiết lập interval để chạy lại mỗi 5 giây
-    reloadIntervalId = setInterval(performReload, 5000); // 5 giây
 
     res.json({ message: 'Bắt đầu reload trang định kỳ.', url: currentTargetUrl });
 });
@@ -342,7 +356,7 @@ const htmlContent = `
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', async () => { // Thêm async ở đây
+        document.addEventListener('DOMContentLoaded', async () => {
             const urlInput = document.getElementById('urlInput');
             const cookieInput = document.getElementById('cookieInput');
             const startButton = document.getElementById('startButton');
@@ -355,7 +369,7 @@ const htmlContent = `
             function appendLog(message, type = 'info') {
                 const span = document.createElement('span');
                 span.classList.add(type);
-                span.textContent = \`[\${new Date().toLocaleTimeString()}] \${message}\\n\`;
+                span.textContent = \`[\${new Date().toLocaleTimeString('vi-VN', { hour12: false })}] \${message}\\n\`;
                 logArea.appendChild(span);
                 logArea.scrollTop = logArea.scrollHeight; // Cuộn xuống cuối
                 console.log(\`[Log Web] [\${type.toUpperCase()}] \${message}\`); // Ghi log ra console trình duyệt
@@ -418,8 +432,9 @@ const htmlContent = `
                 try {
                     const cookieText = cookieInput.value.trim();
                     if (cookieText) {
+                        // Kiểm tra nếu chuỗi có dấu bằng, khả năng là chuỗi cookie thô
                         if (cookieText.includes('=')) {
-                            appendLog('Bạn có vẻ đã dán chuỗi cookie trực tiếp. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
+                            appendLog('Bạn có vẻ đã dán chuỗi cookie thô. Vui lòng dán JSON array từ Cookie Editor.', 'warning');
                             return;
                         }
                         cookies = JSON.parse(cookieText);
@@ -442,11 +457,6 @@ const htmlContent = `
                     appendLog('Địa chỉ URL phải bắt đầu bằng http:// hoặc https://', 'error');
                     return;
                 }
-
-                // Dữ liệu được gửi thẳng lên server và lưu ở đó
-                // Không cần localStorage nữa
-                // localStorage.setItem('reloaderUrl', url);
-                // localStorage.setItem('reloaderCookies', cookieInput.value.trim());
 
                 appendLog('Đang gửi yêu cầu bắt đầu reload...', 'info');
 
