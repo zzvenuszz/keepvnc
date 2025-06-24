@@ -3,8 +3,7 @@ import { WebSocketServer } from 'ws';
 import fetch from 'node-fetch';
 import fs from 'fs/promises'; // Import fs/promises để dùng async/await với file system
 import path from 'path'; // Để xử lý đường dẫn file
-import { fileURLToPath } = require('url'); // Sử dụng require thay vì import để tránh xung đột với __dirname trong ES Modules
-
+import { fileURLToPath } from 'url'; // Cách đúng để lấy __dirname trong ES Modules cho ES Modules
 
 const app = express();
 const PORT = 3000;
@@ -13,7 +12,6 @@ const PORT = 3000;
 app.use(express.json());
 
 // Xác định đường dẫn thư mục hiện tại cho ES Modules
-// Đây là cách đúng để có __dirname trong ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -433,8 +431,7 @@ const htmlContent = `
                     throw new Error('HTTP error! status: ' + response.status);
                 }
                 const data = await response.json();
-                // Dòng này đã được sửa lỗi cú pháp
-                console.log('[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: \'' + data.url + '\', Cookies: ' + (data.cookies ? data.cookies.length : 0) + ' mục.');
+                console.log('[CLIENT JS] Đã nhận dữ liệu từ /load-data. URL: \\'' + data.url + '\\', Cookies: ' + (data.cookies ? data.cookies.length : 0) + ' mục.');
                 
                 if (data.url) {
                     urlInput.value = data.url;
@@ -536,7 +533,7 @@ const htmlContent = `
 
                 appendLog('Đang gửi yêu cầu bắt đầu reload đến server...', 'info');
                 console.log('[CLIENT JS] Đang gửi POST request tới /start-reload...');
-                console.log('[CLIENT JS] Dữ liệu gửi đi: URL=\'' + url + '\', Cookies: ' + cookies.length + ' mục.');
+                console.log('[CLIENT JS] Dữ liệu gửi đi: URL=\\'' + url + '\\', Cookies: ' + cookies.length + ' mục.');
 
                 try {
                     const response = await fetch('/start-reload', {
@@ -551,7 +548,7 @@ const htmlContent = `
                     const data = await response.json();
                     if (response.ok) {
                         appendLog('Server phản hồi: ' + data.message + ' - URL: ' + data.url, 'success');
-                        console.log('Server phản hồi thành công: ' + data.message); // Dòng này cũng đã được sửa
+                        console.log('Server phản hồi thành công: ' + data.message); 
                     } else {
                         appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
                         console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
@@ -577,7 +574,7 @@ const htmlContent = `
                     const data = await response.json();
                     if (response.ok) {
                         appendLog('Server phản hồi: ' + data.message, 'success');
-                        console.log('Server phản hồi thành công: ' + data.message); // Dòng này cũng đã được sửa
+                        console.log('Server phản hồi thành công: ' + data.message);
                     } else {
                         appendLog('Lỗi từ server: ' + (data.message || 'Không rõ lỗi'), 'error');
                         console.error('[CLIENT JS] Server phản hồi lỗi: ' + (data.message || 'Không rõ lỗi'));
@@ -592,35 +589,3 @@ const htmlContent = `
 </body>
 </html>
 `;
-
-// Middleware để phục vụ HTML content trực tiếp từ Express
-app.get('/', (req, res) => {
-    console.log('[SERVER - WEB] Nhận yêu cầu GET / từ trình duyệt. Đang gửi HTML.');
-    res.send(htmlContent);
-});
-
-// Lắng nghe cổng HTTP
-const server = app.listen(PORT, async () => {
-    console.log(`[SERVER - KHỞI ĐỘNG] Server đang chạy và lắng nghe tại http://localhost:${PORT}`);
-    await loadSavedData(); // Tải dữ liệu khi server khởi động
-});
-
-// Nâng cấp kết nối HTTP lên WebSocket khi có yêu cầu
-server.on('upgrade', (request, socket, head) => {
-    console.log(`[SERVER - WEBSOCKET] Nhận yêu cầu nâng cấp WebSocket cho URL: ${request.url}`);
-    if (request.url === '/ws') {
-        wss.handleUpgrade(request, socket, head, ws => {
-            wss.emit('connection', ws, request);
-        });
-    } else {
-        console.warn('[SERVER - WEBSOCKET] Từ chối nâng cấp WebSocket: URL không khớp /ws');
-        socket.destroy();
-    }
-});
-
-// Xử lý kết nối WebSocket
-wss.on('connection', ws => {
-    console.log('[SERVER - WEBSOCKET] Một client WebSocket mới đã kết nối.');
-    ws.on('close', () => console.log('[SERVER - WEBSOCKET] Một client WebSocket đã ngắt kết nối.'));
-    ws.on('error', error => console.error('[SERVER - WEBSOCKET LỖI] Lỗi WebSocket:', error.message));
-});
